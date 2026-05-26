@@ -16,6 +16,13 @@
       "recommended_certifications": ["AZ-204", "AZ-400"],
       "core_competencies": ["Serverless Computing", "Containerization", "Secure App Storage"],
       "mandatory_skills": ["Azure Functions", "Azure Cosmos DB", "Key Vault"]
+    },
+    {
+      "section_id": "SEC-003",
+      "target_role": "Cloud Security Engineer",
+      "recommended_certifications": ["AZ-500", "SC-100"],
+      "core_competencies": ["Identity Protection", "Threat Detection", "Security Posture Management"],
+      "mandatory_skills": ["Microsoft Defender for Cloud", "Azure Sentinel", "Zero Trust Architecture"]
     }
   ],
   "study_capacity_rules": {
