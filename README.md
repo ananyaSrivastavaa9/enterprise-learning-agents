@@ -17,38 +17,38 @@ document and produce a fully personalized certification and study plan.
 
 ---
 
-## 🏗️ Architecture
-User Input (employee role)
-↓
-SUPERVISOR AGENT
-(orchestrates the reasoning loop)
-↓
-┌─────────────────────────┐
+## 🏗️ Architecture 
+User Input (employee role) 
+↓ 
+SUPERVISOR AGENT 
+(orchestrates the reasoning loop) 
+↓ 
+┌─────────────────────────┐ 
 │                         │
-POLICY AGENT         STUDY PLANNER AGENT
-(reads corporate     (builds weekly schedule
-policy JSON,         using capacity rules
-extracts certs       from policy document)
-and skills)
-│                         │
-└──────────┬──────────────┘
-↓
-MEMORY AGENT
-(aggregates both outputs
-into final response)
-↓
-Final Learning Plan
+POLICY AGENT         STUDY PLANNER AGENT 
+(reads corporate     (builds weekly schedule 
+policy JSON,         using capacity rules 
+extracts certs       from policy document) 
+and skills) 
+│                         │ 
+└──────────┬──────────────┘ 
+↓ 
+MEMORY AGENT 
+(aggregates both outputs 
+into final response) 
+↓ 
+Final Learning Plan 
 
 ---
 
 ## 🤖 Agent Breakdown
 
-| Agent | Role | File |
-|---|---|---|
-| Supervisor | Orchestrates the full reasoning loop | `supervisor.py` |
-| Policy Agent | Reads enterprise JSON, extracts role requirements | `agents/policy_agent.py` |
-| Study Planner Agent | Builds weekly schedule within capacity constraints | `agents/study_planner_agent.py` |
-| Memory Agent | Aggregates all outputs into final polished response | `memory/memory_agent.py` |
+| Agent | Role | File | 
+|---|---|---| 
+| Supervisor | Orchestrates the full reasoning loop | `supervisor.py` | 
+| Policy Agent | Reads enterprise JSON, extracts role requirements | `agents/policy_agent.py` | 
+| Study Planner Agent | Builds weekly schedule within capacity constraints | `agents/study_planner_agent.py` | 
+| Memory Agent | Aggregates all outputs into final polished response | `memory/memory_agent.py` | 
 
 ---
 
