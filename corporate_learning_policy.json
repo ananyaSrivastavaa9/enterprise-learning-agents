@@ -1,0 +1,25 @@
+{
+  "company_name": "Contoso Cloud Solutions",
+  "document_type": "Enterprise Role-Based Certification Alignment Guide",
+  "version": "2026.1",
+  "policies": [
+    {
+      "section_id": "SEC-001",
+      "target_role": "Cloud Infrastructure Engineer",
+      "recommended_certifications": ["AZ-104", "AZ-305"],
+      "core_competencies": ["Virtual Networking", "Identity Management", "Compute Provisioning"],
+      "mandatory_skills": ["Azure Resource Manager templates", "Bicep"]
+    },
+    {
+      "section_id": "SEC-002",
+      "target_role": "Cloud Application Developer",
+      "recommended_certifications": ["AZ-204", "AZ-400"],
+      "core_competencies": ["Serverless Computing", "Containerization", "Secure App Storage"],
+      "mandatory_skills": ["Azure Functions", "Azure Cosmos DB", "Key Vault"]
+    }
+  ],
+  "study_capacity_rules": {
+    "maximum_weekly_hours_allowed": 6,
+    "recommended_focus_block_duration_minutes": 90
+  }
+}
