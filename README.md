@@ -18,6 +18,7 @@ document and produce a fully personalized certification and study plan.
 ---
 
 ## 🏗️ Architecture 
+```text
 User Input (employee role) 
 ↓ 
 SUPERVISOR AGENT 
@@ -38,6 +39,7 @@ MEMORY AGENT
 into final response) 
 ↓ 
 Final Learning Plan 
+```
 
 ---
 
