@@ -63,16 +63,22 @@ from the policy, reducing hallucination and enforcing enterprise accuracy.
 ---
 
 ## 📁 Project Structure
+
+```text
 enterprise-learning-agents/
-├── supervisor.py                    # Supervisor agent + interactive loop
-├── corporate_learning_policy.json  # Enterprise policy document (grounding source)
-├── .env                            # API keys (not committed)
+│
+├── supervisor.py
+├── corporate_learning_policy.json
+├── .env
+├── README.md
+│
 ├── agents/
-│   ├── policy_agent.py             # Extracts role requirements from policy
-│   └── study_planner_agent.py      # Builds weekly study schedule
-├── memory/
-│   └── memory_agent.py             # Aggregates outputs into final response
-└── README.md
+│   ├── policy_agent.py
+│   └── study_planner_agent.py
+│
+└── memory/
+    └── memory_agent.py
+```
 
 ---
 
