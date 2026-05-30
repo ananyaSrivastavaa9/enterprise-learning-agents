@@ -130,8 +130,7 @@ Enter employee role: Cloud Infrastructure Engineer
 
 ## 👨‍💻 Built By
 
-Built for the **Microsoft Agents League Hackathon @ AI Skills Fest 2026**
-Reasoning Agents Track | Powered by GitHub Models + gpt-4o
-Save the file. Then run this to do a final clean test of the whole system:
-bashpython supervisor.py
-Type Cloud Application Developer when prompted. Paste the output — if it runs clean, we move to the architecture diagram and submission checklist.
+Built for the **Microsoft Agents League Hackathon @ AI Skills Fest 2026**  
+Reasoning Agents Track | Powered by GitHub Models + gpt-4o  
+Save the file.   
+Then run this to do a final clean test of the whole system: python supervisor.py   
