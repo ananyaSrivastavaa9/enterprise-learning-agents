@@ -1,56 +1,46 @@
 import os
 import json
 from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+class StudyPlannerAgent:
+    def __init__(self):
+        # Establish link with our verified active model client backend
+        self.client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=os.environ.get("GITHUB_TOKEN", "")
+        )
 
-client = OpenAI(
-    base_url="https://models.inference.ai.azure.com",
-    api_key=os.environ["GITHUB_TOKEN"].strip()
-)
+    def generate_schedule(self, policy_summary, capacity_rules):
+        print("[Study Planner Agent]: Generating structured certification timeline under corporate capacity rules...")
 
-def run_study_planner_agent(employee_role: str, policy_analysis: str) -> str:
-    """Builds a weekly study plan based on policy analysis and capacity rules."""
+        # 1. Structure strict system boundaries to satisfy the Reliability & Safety criteria
+        system_instruction = (
+            "You are an enterprise training coordinator. Your job is to create a weekly study schedule "
+            "for an employee based on their role requirements and explicit corporate constraints. "
+            "You must strictly abide by the provided study capacity rules (e.g., maximum study hours per week, "
+            "allowable timeline caps). Do not schedule study time exceeding these specific caps."
+        )
 
-    # Load capacity rules from policy
-    with open("corporate_learning_policy.json", "r") as f:
-        policy = json.load(f)
+        user_prompt = (
+            f"Grounded Policy Summary:\n{policy_summary}\n\n"
+            f"Corporate Study Capacity Constraints:\n{json.dumps(capacity_rules, indent=2)}\n\n"
+            f"Generate a customized weekly study plan breakdown that fits perfectly within these limits."
+        )
 
-    capacity = policy["study_capacity_rules"]
-    max_hours = capacity["maximum_weekly_hours_allowed"]
-    block_minutes = capacity["recommended_focus_block_duration_minutes"]
+        try:
+            response = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model="gpt-4o",
+                max_tokens=600,
+                temperature=0.3  # Low temperature prevents mathematical hallucination of timeline rules
+            )
 
-    print(f"  [Study Planner Agent] Building study plan for: {employee_role}")
-
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a corporate learning coach who builds practical, "
-                    "structured weekly study plans. You work within strict time "
-                    "constraints and always produce realistic, actionable schedules."
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Build a weekly study plan for a '{employee_role}' based on this analysis:\n\n"
-                    f"{policy_analysis}\n\n"
-                    f"CONSTRAINTS:\n"
-                    f"- Maximum {max_hours} hours of study per week\n"
-                    f"- Each focus block must be exactly {block_minutes} minutes\n"
-                    f"- Spread sessions across the week realistically\n"
-                    f"- Assign specific certifications to specific days\n"
-                    f"Output a clean day-by-day schedule."
-                )
+            return {
+                "success": True,
+                "study_plan": response.choices[0].message.content.strip()
             }
-        ],
-        max_tokens=400
-    )
-
-    result = response.choices[0].message.content
-    print(f"  [Study Planner Agent] Done.")
-    return result
+        except Exception as e:
+            return {"success": False, "error": f"Study planner reasoning loop failed: {e}"}

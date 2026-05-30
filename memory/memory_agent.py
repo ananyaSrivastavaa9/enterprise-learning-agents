@@ -1,48 +1,44 @@
 import os
 from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+class MemoryAgent:
+    def __init__(self):
+        # Establish connection to our verified active engine backend
+        self.client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=os.environ.get("GITHUB_TOKEN", "")
+        )
 
-client = OpenAI(
-    base_url="https://models.inference.ai.azure.com",
-    api_key=os.environ["GITHUB_TOKEN"].strip()
-)
+    def aggregate_final_plan(self, employee_role, citation, policy_summary, study_plan):
+        print("[Memory Agent]: Running final orchestration aggregation and citation mapping...")
 
-def run_memory_agent(employee_role: str, policy_analysis: str, study_plan: str) -> str:
-    """Aggregates all agent outputs into one final polished response."""
+        # Structure strict guardrails for the aggregation format
+        system_instruction = (
+            "You are an executive enterprise communications expert. Your job is to compile separate "
+            "policy summaries and technical study plans into a single, beautifully polished, cohesive "
+            "Corporate Development Report. You must explicitly include the provided data source citation "
+            "at the very top of the response to ensure complete grounding transparency."
+        )
 
-    print(f"  [Memory Agent] Aggregating outputs for: {employee_role}")
+        user_prompt = (
+            f"Employee Target Designation: {employee_role}\n"
+            f"Verified Grounding Source: {citation}\n\n"
+            f"--- Section A: Policy Summary Input ---\n{policy_summary}\n\n"
+            f"--- Section B: Dynamic Study Plan Input ---\n{study_plan}\n\n"
+            f"Compile these into a professional document using clean Markdown syntax."
+        )
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are an enterprise learning advisor who synthesizes "
-                    "analysis from multiple specialist agents into a single, "
-                    "clear, executive-level summary. "
-                    "Your output is the final response shown to the employee. "
-                    "Be warm, professional, and actionable."
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"An employee with role '{employee_role}' has requested a learning plan.\n\n"
-                    f"POLICY SPECIALIST ANALYSIS:\n{policy_analysis}\n\n"
-                    f"STUDY PLANNER OUTPUT:\n{study_plan}\n\n"
-                    f"Synthesize both into one clean final response. "
-                    f"Start with a one-sentence welcome, then present the key "
-                    f"certifications, then the weekly schedule summary. "
-                    f"End with one motivational sentence."
-                )
-            }
-        ],
-        max_tokens=400
-    )
+        try:
+            response = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "system_instruction" if False else "content": system_instruction},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model="gpt-4o",
+                max_tokens=1000,
+                temperature=0.4 # Slightly higher temperature allows for elegant, professional layout styling
+            )
 
-    result = response.choices[0].message.content
-    print(f"  [Memory Agent] Done.")
-    return result
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            return f"❌ Memory aggregation layer failed: {e}"

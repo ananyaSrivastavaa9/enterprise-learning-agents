@@ -1,51 +1,60 @@
 import os
 import json
 from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+class PolicyAgent:
+    def __init__(self, iq_engine):
+        """Initialize with our verified Foundry IQ Simulator Engine"""
+        self.iq_engine = iq_engine
+        # Connect to our active GitHub Models client backend
+        self.client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=os.environ.get("GITHUB_TOKEN", "")
+        )
 
-client = OpenAI(
-    base_url="https://models.inference.ai.azure.com",
-    api_key=os.environ["GITHUB_TOKEN"].strip()
-)
-
-def run_policy_agent(employee_role: str) -> str:
-    """Reads the corporate policy JSON and returns cert + skill recommendations."""
-    
-    # Load the policy document
-    with open("corporate_learning_policy.json", "r") as f:
-        policy = json.load(f)
-    
-    # Convert policy to string for the agent to reason over
-    policy_text = json.dumps(policy, indent=2)
-    
-    print(f"  [Policy Agent] Analyzing policy for role: {employee_role}")
-    
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a corporate learning policy specialist. "
-                    "You read enterprise policy documents and extract precise, "
-                    "role-specific certification and skill requirements. "
-                    "Be concise and structured."
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Using the policy document below, extract all recommended certifications, "
-                    f"core competencies, and mandatory skills for the role: '{employee_role}'.\n\n"
-                    f"POLICY DOCUMENT:\n{policy_text}"
-                )
+    def process_role_requirements(self, employee_role):
+        print(f"[Policy Agent]: Querying Foundry IQ plane for role: '{employee_role}'...")
+        
+        # 1. Direct Grounding Check via our Microsoft IQ simulation layer
+        iq_result = self.iq_engine.query_vector_kb(employee_role)
+        
+        if iq_result["status"] != "Grounded":
+            return {
+                "success": False,
+                "error": f"Role '{employee_role}' could not be grounded in enterprise policy data."
             }
-        ],
-        max_tokens=300
-    )
-    
-    result = response.choices[0].message.content
-    print(f"  [Policy Agent] Done.")
-    return result
+
+        # Extract the real document snippet and citation link
+        policy_payload = iq_result["payload"]
+        citation = iq_result["citations"]
+        
+        print(f"[Policy Agent]: ✅ Found grounded match via {citation}")
+
+        # 2. Use gpt-4o to reason over the extracted policy data and clean up the schema requirements
+        system_instruction = (
+            "You are an expert corporate policy compliance auditor. Analyze the provided policy snippet "
+            "and extract a clean, explicit bulleted summary of recommended certifications, core competencies, "
+            "and mandatory skills. Do not add outside assumptions. Stick entirely to the grounded text."
+        )
+        
+        user_prompt = f"Policy Document Snippet:\n{json.dumps(policy_payload, indent=2)}\n\nAnalyze and summarize."
+
+        try:
+            response = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model="gpt-4o",
+                max_tokens=500,
+                temperature=0.2  # Keep deterministic for high compliance accuracy
+            )
+            
+            return {
+                "success": True,
+                "citation": citation,
+                "policy_summary": response.choices[0].message.content.strip(),
+                "capacity_rules": iq_result["capacity_rules"] # Pass down the line to the study planner agent
+            }
+        except Exception as e:
+            return {"success": False, "error": f"Model reasoning failed: {e}"}
