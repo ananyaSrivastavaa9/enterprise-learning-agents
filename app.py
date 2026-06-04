@@ -4,6 +4,7 @@ import time
 import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI, APITimeoutError
+from showcase_carousel_html import SHOWCASE_CAROUSEL_HTML
 
 # Load project keys
 load_dotenv()
@@ -487,9 +488,6 @@ if st.session_state.cached_report and st.session_state.cached_audit:
         
     st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown(
-        f'<div class="cards-scroll-container">{st.session_state.cached_report}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(SHOWCASE_CAROUSEL_HTML, unsafe_allow_html=True)
 
 st.markdown("<br><br><div style='text-align:center; color:#94a3b8; font-size:0.8rem; letter-spacing:0.5px;'>Daily Nixtio v2.6 Core Framework Integration • Powered by GitHub Models</div>", unsafe_allow_html=True)
