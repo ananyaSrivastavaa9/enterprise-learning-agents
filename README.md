@@ -182,7 +182,7 @@ The learning plan materializes as a **fluid horizontal carousel**—a cinematic 
 ### 1 · Clone & Enter
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/enterprise-learning-agents.git
+git clone https://github.com/ananyaSrivastavaa9/enterprise-learning-agents.git 
 cd enterprise-learning-agents
 ```
 
