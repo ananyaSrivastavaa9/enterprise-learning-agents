@@ -1,526 +1,495 @@
 import os
 import json
-from flask import Flask, request, jsonify, render_template_string
-from supervisor import run_supervisor, handle_followup, is_followup_question, session_history, get_available_roles
+import time
+import streamlit as st
 from dotenv import load_dotenv
+from openai import OpenAI, APITimeoutError
 
+# Load project keys
 load_dotenv()
 
-app = Flask(__name__)
+MODELS_BASE_URL = "https://models.inference.ai.azure.com"
+API_TIMEOUT_SECONDS = 300.0
+CHAT_MAX_RETRIES = 3
 
-HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Enterprise Learning Agents</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+
+def create_models_client(api_key: str) -> OpenAI:
+    return OpenAI(
+        base_url=MODELS_BASE_URL,
+        api_key=api_key,
+        timeout=API_TIMEOUT_SECONDS,
+        max_retries=0,
+    )
+
+
+def chat_with_retry(client: OpenAI, *, step_label: str, **kwargs):
+    last_error = None
+    for attempt in range(1, CHAT_MAX_RETRIES + 1):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except APITimeoutError as exc:
+            last_error = exc
+            if attempt >= CHAT_MAX_RETRIES:
+                raise TimeoutError(
+                    f"{step_label} timed out after {CHAT_MAX_RETRIES} attempts "
+                    f"({int(API_TIMEOUT_SECONDS)}s each). Try Submit again."
+                ) from exc
+            time.sleep(2 ** (attempt - 1))
+    raise last_error
+
+# Set up page configurations with premium minimalist canvas
+st.set_page_config(
+    page_title="Daily Nixtio | Learning Agents",
+    page_icon="🔮",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Initialize Session Memory States securely to block variable data wiping
+if "cached_report" not in st.session_state:
+    st.session_state.cached_report = None
+if "cached_audit" not in st.session_state:
+    st.session_state.cached_audit = None
+if "pipeline_logs" not in st.session_state:
+    st.session_state.pipeline_logs = []
+if "previous_role" not in st.session_state:
+    st.session_state.previous_role = ""
+
+# ==========================================================
+# 🎨 SURREAL LIGHT METALLIC GLASSMORPHISM CSS ENGINE
+# ==========================================================
+st.markdown("""
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #080c14;
-    --surface: #0d1520;
-    --border: #1a2a3a;
-    --accent: #00d4ff;
-    --accent2: #7c3aed;
-    --accent3: #10b981;
-    --text: #e2e8f0;
-    --muted: #64748b;
-  }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Syne', sans-serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 32px 16px;
-  }
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-  }
-  .header {
-    text-align: center;
-    margin-bottom: 32px;
-  }
-  .badge {
-    display: inline-block;
-    background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(124,58,237,0.15));
-    border: 1px solid rgba(0,212,255,0.3);
-    color: var(--accent);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 2px;
-    padding: 6px 16px;
-    border-radius: 20px;
-    margin-bottom: 12px;
-    text-transform: uppercase;
-  }
-  h1 {
-    font-size: clamp(22px, 4vw, 38px);
-    font-weight: 800;
-    background: linear-gradient(135deg, #fff 0%, var(--accent) 50%, var(--accent2) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 8px;
-  }
-  .subtitle {
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .main {
-    width: 100%;
-    max-width: 860px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .roles-bar {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  .role-chip {
-    background: rgba(0,212,255,0.08);
-    border: 1px solid rgba(0,212,255,0.2);
-    color: var(--accent);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    padding: 6px 14px;
-    border-radius: 20px;
-    cursor: pointer;
-    transition: all 0.2s;
-    letter-spacing: 0.5px;
-  }
-  .role-chip:hover {
-    background: rgba(0,212,255,0.18);
-    border-color: var(--accent);
-  }
-  .input-row {
-    display: flex;
-    gap: 10px;
-  }
-  input[type="text"] {
-    flex: 1;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 18px;
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  input[type="text"]:focus {
-    border-color: var(--accent);
-  }
-  input[type="text"]::placeholder { color: var(--muted); }
-  button {
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    border: none;
-    border-radius: 10px;
-    padding: 14px 28px;
-    color: #fff;
-    font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 14px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    white-space: nowrap;
-  }
-  button:hover { opacity: 0.85; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .chat-window {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    min-height: 420px;
-    max-height: 560px;
-    overflow-y: auto;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    text-align: center;
-  }
-  .empty-icon { font-size: 40px; }
-  .message {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    animation: slideIn 0.3s ease;
-  }
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .message-user {
-    align-self: flex-end;
-    background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(124,58,237,0.1));
-    border: 1px solid rgba(0,212,255,0.2);
-    border-radius: 10px 10px 2px 10px;
-    padding: 10px 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--accent);
-    max-width: 70%;
-  }
-  .message-agent {
-    align-self: flex-start;
-    max-width: 92%;
-  }
-  .agent-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-  .agent-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--accent3);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-  .agent-steps {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-  }
-  .step-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    border: 1px solid;
-  }
-  .step-1 { color: #a78bfa; border-color: rgba(124,58,237,0.3); background: rgba(124,58,237,0.08); }
-  .step-2 { color: var(--accent3); border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); }
-  .step-3 { color: var(--accent); border-color: rgba(0,212,255,0.3); background: rgba(0,212,255,0.08); }
-  .memory-badge { color: #f59e0b; border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
-  .agent-body {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    line-height: 1.7;
-    white-space: pre-wrap;
-    color: var(--text);
-  }
-  .error-msg {
-    background: rgba(239,68,68,0.08);
-    border: 1px solid rgba(239,68,68,0.3);
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: #f87171;
-  }
-  .loading {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--muted);
-    padding: 10px 0;
-  }
-  .dots span {
-    display: inline-block;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    margin: 0 2px;
-    animation: bounce 1.2s infinite;
-  }
-  .dots span:nth-child(2) { animation-delay: 0.2s; }
-  .dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes bounce {
-    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-    40% { transform: translateY(-6px); opacity: 1; }
-  }
-  .session-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
-    padding: 0 4px;
-  }
-  .session-count {
-    color: var(--accent3);
-  }
-  .clear-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 12px;
-    color: var(--muted);
-    font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .clear-btn:hover {
-    border-color: #ef4444;
-    color: #f87171;
-    background: transparent;
-  }
+:root{
+  --bg0:#f8f9ff;
+  --bg1:#edebff;
+  --bg2:#dde6ff;
+  --bg3:#c7d2fe;
+  --bg4:#b8c0ff;
+  --text:#1c1f2b;
+  --muted:#667085;
+  --card:rgba(255,255,255,0.75);
+  --stroke:rgba(128,140,255,0.22);
+  --glow:rgba(148,163,255,0.30);
+}
+
+.stApp{
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.72) 14%, transparent 33%),
+    radial-gradient(circle at 82% 18%, rgba(236,232,255,0.98) 0%, rgba(236,232,255,0.70) 14%, transparent 35%),
+    radial-gradient(circle at 50% 90%, rgba(216,224,255,0.92) 0%, rgba(216,224,255,0.55) 16%, transparent 42%),
+    linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 42%, var(--bg2) 100%) !important;
+  color:var(--text) !important;
+  font-family:Inter, Poppins, system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.stApp::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(184,192,255,0.30), transparent 22%),
+    radial-gradient(circle at 80% 25%, rgba(255,255,255,0.45), transparent 18%),
+    radial-gradient(circle at 60% 80%, rgba(221,230,255,0.48), transparent 24%);
+  filter: blur(10px);
+  opacity:.9;
+  animation: drift 16s ease-in-out infinite alternate;
+}
+
+@keyframes drift{
+  from{transform:translate3d(0,0,0) scale(1)}
+  to{transform:translate3d(0,-10px,0) scale(1.03)}
+}
+
+.block-container{
+  padding-top:2.2rem !important;
+  padding-bottom:2rem !important;
+  max-width: 1500px !important;
+}
+
+[data-testid="stHeader"], [data-testid="stToolbar"]{background:transparent !important;}
+
+/* --- DYNAMIC TARGET ROLE BANNER --- */
+.role-heading-banner {
+  background: linear-gradient(135deg, rgba(255,255,255,0.85), rgba(240,243,255,0.65)) !important;
+  border: 1px solid rgba(141,154,255,0.25) !important;
+  box-shadow: 0 12px 30px rgba(132, 146, 255, 0.08) !important;
+  border-radius: 20px !important;
+  padding: 24px 30px !important;
+  margin-top: 35px !important;
+  margin-bottom: 25px !important;
+  text-align: center;
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* --- HORIZONTAL SCROLL CAROUSEL ENGINE --- */
+.cards-scroll-container {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 24px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 15px 10px 30px 10px !important;
+  width: 100% !important;
+  scroll-behavior: smooth !important;
+}
+
+.cards-scroll-container::-webkit-scrollbar {
+  height: 8px !important;
+}
+.cards-scroll-container::-webkit-scrollbar-track {
+  background: rgba(128, 140, 255, 0.05) !important;
+  border-radius: 10px !important;
+}
+.cards-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(128, 140, 255, 0.25) !important;
+  border-radius: 10px !important;
+}
+.cards-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 140, 255, 0.45) !important;
+}
+
+/* --- FIX: COLLECTIBLE DYNAMIC HEIGHT CARD ENGINE --- */
+.collectible-card {
+  flex: 0 0 340px !important; 
+  background: var(--card) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 24px !important;
+  padding: 24px !important;
+  height: auto !important; /* Content tightly dictates bounds now */
+  align-self: flex-start !important; /* Stops card from stretching horizontally alongside grid row items */
+  box-shadow: 0 15px 35px rgba(132, 146, 255, 0.06), inset 0 1px 0 rgba(255,255,255,0.6) !important;
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--delay, 0s);
+  transition: transform .4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .4s ease, border-color .4s ease !important;
+}
+
+.collectible-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 30px 65px rgba(132, 146, 255, 0.18), inset 0 1px 0 rgba(255,255,255,0.9) !important;
+  border-color: rgba(128,140,255,0.45) !important;
+}
+
+.card-title {
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  color: #1e1b4b !important;
+  margin-top: 4px !important;
+  margin-bottom: 12px !important;
+  line-height: 1.4 !important;
+  white-space: normal !important;
+}
+
+.card-body-text {
+  color: #49557a !important;
+  font-size: 0.96rem !important;
+  line-height: 1.65 !important;
+  white-space: normal !important;
+}
+
+.card-body-text ul {
+  padding-left: 18px !important;
+  margin-top: 6px !important;
+}
+
+.card-body-text li {
+  margin-bottom: 6px !important;
+}
+
+.hero-shell{
+  background: var(--card) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius:30px !important;
+  padding:28px !important;
+  position:relative !important;
+  overflow:hidden !important;
+  box-shadow: 0 20px 40px rgba(132, 146, 255, 0.06) !important;
+}
+
+.insight-capsule {
+  background: rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 14px !important;
+  padding: 12px 16px !important;
+  margin-top: 8px !important;
+  font-size: 0.92rem !important;
+  color: #344054 !important;
+}
+
+.stTextInput>div>div>input{
+  background:rgba(255,255,255,0.85) !important;
+  color:#111827 !important;
+  border:1px solid rgba(141,154,255,0.28) !important;
+  border-radius:18px !important;
+  padding:18px 20px !important;
+  font-size:1.04rem !important;
+  box-shadow:0 10px 30px rgba(143,156,255,0.10) !important;
+  transition: all .28s ease !important;
+}
+.stTextInput>div>div>input:focus{
+  border-color:rgba(120,138,255,0.72) !important;
+  box-shadow:0 0 0 5px rgba(183,194,255,0.28), 0 14px 40px rgba(143,156,255,0.18) !important;
+}
+
+.stButton>button{
+  background:linear-gradient(135deg, #c7d2fe 0%, #b8c0ff 100%) !important;
+  color:#1f2340 !important;
+  border:none !important;
+  border-radius:18px !important;
+  padding:14px 22px !important;
+  font-weight:700 !important;
+  box-shadow:0 14px 30px rgba(133,148,255,.28), inset 0 1px 0 rgba(255,255,255,.7) !important;
+  transition:transform .25s ease, box-shadow .25s ease, filter .25s ease !important;
+}
+.stButton>button:hover{transform:translateY(-2px); filter:saturate(1.06); box-shadow:0 18px 36px rgba(133,148,255,.34), 0 0 0 6px rgba(220,226,255,.4) !important;}
+
+.badge-soft{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.62);
+  border:1px solid rgba(141,154,255,0.18);
+  color:#49557a;
+  font-size:.82rem;
+  box-shadow:0 8px 24px rgba(128,140,255,0.08);
+}
+
+.robot-orb{
+  width:108px;
+  height:108px;
+  border-radius:28px;
+  background:radial-gradient(circle at 35% 28%, #ffffff 0%, #eff2ff 34%, #d9defd 100%);
+  box-shadow:0 20px 50px rgba(145,156,255,.22), inset 0 1px 0 rgba(255,255,255,.85);
+  position:relative;
+  animation: floaty 6.5s ease-in-out infinite;
+}
+.robot-orb::before{
+  content:'';
+  position:absolute;
+  inset:18px 24px 34px;
+  border-radius:18px;
+  background:linear-gradient(180deg, #1c1f2b 0%, #2f3650 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 0 25px rgba(175,185,255,.18);
+}
+.robot-orb::after{
+  content:'';
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:14px;
+  height:14px;
+  border-radius:50%;
+  transform:translate(-50%,-50%);
+  background:#dff7ff;
+  box-shadow:-18px 0 0 #dff7ff, 18px 0 0 #dff7ff;
+  animation: blink 4.2s ease-in-out infinite;
+}
+
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes blink{0%,90%,100%{filter:opacity(1)} 93%{filter:opacity(.18)} 96%{filter:opacity(1)}}
+@keyframes fadeIn{from{opacity:0; transform:translateY(20px)} to{opacity:1; transform:translateY(0)}}
+
+@media (max-width: 900px){
+  .block-container{padding-left:1rem !important; padding-right:1rem !important;}
+  .hero-shell{padding:20px !important; border-radius:24px !important;}
+}
 </style>
-</head>
-<body>
+""", unsafe_allow_html=True)
 
-<div class="header">
-  <div class="badge">🏆 Microsoft Agents League Hackathon 2026</div>
-  <h1>Enterprise Learning Agents</h1>
-  <p class="subtitle">Multi-Agent Reasoning System · Contoso Cloud Solutions · Foundry IQ</p>
-</div>
-
-<div class="main">
-
-  <div class="roles-bar" id="rolesBar">
-    <!-- populated by JS -->
+# Hero Viewport Shell Layout
+st.markdown("""
+<div class='hero-shell'>
+  <div style='display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;'>
+    <div class='badge-soft'>Assistant v2.6</div>
+    <div style='font-weight:600; color:#1f2340;'>Contoso Agents League</div>
+    <div class='badge-soft'>Upgrade</div>
   </div>
-
-  <div class="input-row">
-    <input type="text" id="userInput"
-      placeholder="Enter employee role or ask a follow-up question..." />
-    <button id="sendBtn" onclick="sendMessage()">Run Agents →</button>
-  </div>
-
-  <div class="session-bar">
-    <span>Session memory: <span class="session-count" id="turnCount">0 turns</span></span>
-    <button class="clear-btn" onclick="clearSession()">Clear session</button>
-  </div>
-
-  <div class="chat-window" id="chatWindow">
-    <div class="empty-state" id="emptyState">
-      <div class="empty-icon">🤖</div>
-      <div>Enter an employee role to start the reasoning loop</div>
-      <div style="color:#334155">e.g. "Cloud Infrastructure Engineer"</div>
+  <div style='display:grid; grid-template-columns:1.1fr .9fr; gap:28px; align-items:center; margin-top:26px;'>
+    <div>
+      <div class='badge-soft' style='margin-bottom:14px;'>Premium AI Planning Workspace</div>
+      <h1 style='font-size:clamp(2.2rem, 3.5vw, 4.3rem); line-height:0.96; margin:0; color:#161a2b; font-weight:800;'>Hi there. Ready to build something extraordinary?</h1>
+      <p style='font-size:1.05rem; color:#5f6b8a; margin-top:16px; max-width:620px;'>Enter a role, and your grounded multi-agent workflow will generate an elegant, day-wise learning plan inside this redesigned luxury interface.</p>
+    </div>
+    <div style='display:flex; justify-content:center; position:relative;'>
+      <div class='robot-orb'></div>
+      <div style='position:absolute; right:4%; top:10%; background:rgba(255,255,255,.78); padding:12px 14px; border-radius:18px; border:1px solid rgba(141,154,255,.18); box-shadow:0 12px 28px rgba(143,156,255,.16); color:#364055; font-size:.9rem;'>Hey there ✨<br>Need a boost?</div>
     </div>
   </div>
-
 </div>
+""", unsafe_allow_html=True)
 
-<script>
-  let turnCount = 0;
+# ==========================================================
+# 🧬 REASONING INFRASTRUCTURE BACKEND (FOUNDRY IQ GATE)
+# ==========================================================
+class FoundryIQEngine:
+    def __init__(self, policy_path="corporate_learning_policy.json"):
+        self.policy_path = policy_path
+        self.kb_data = self._load_knowledge_base()
 
-  // Load available roles and render chips
-  fetch('/roles').then(r => r.json()).then(data => {
-    const bar = document.getElementById('rolesBar');
-    data.roles.forEach(role => {
-      const chip = document.createElement('div');
-      chip.className = 'role-chip';
-      chip.textContent = role;
-      chip.onclick = () => {
-        document.getElementById('userInput').value = role;
-        sendMessage();
-      };
-      bar.appendChild(chip);
-    });
-  });
+    def _load_knowledge_base(self):
+        if not os.path.exists(self.policy_path): return None
+        try:
+            with open(self.policy_path, 'r', encoding='utf-8') as f: return json.load(f)
+        except Exception: return None
 
-  document.getElementById('userInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') sendMessage();
-  });
-
-  function clearSession() {
-    fetch('/clear', {method: 'POST'}).then(() => {
-      document.getElementById('chatWindow').innerHTML =
-        '<div class="empty-state" id="emptyState"><div class="empty-icon">🤖</div><div>Session cleared. Enter a role to start again.</div></div>';
-      turnCount = 0;
-      document.getElementById('turnCount').textContent = '0 turns';
-    });
-  }
-
-  function addUserMessage(text) {
-    const el = document.createElement('div');
-    el.className = 'message-user';
-    el.textContent = text;
-    return el;
-  }
-
-  function addLoading() {
-    const el = document.createElement('div');
-    el.className = 'loading';
-    el.id = 'loadingMsg';
-    el.innerHTML = 'Agents reasoning <div class="dots"><span></span><span></span><span></span></div>';
-    return el;
-  }
-
-  function renderResponse(data) {
-    const wrap = document.createElement('div');
-    wrap.className = 'message message-agent';
-
-    const header = document.createElement('div');
-    header.className = 'agent-header';
-    const label = document.createElement('div');
-    label.className = 'agent-label';
-    label.textContent = data.type === 'memory' ? '🧠 Memory Agent' : '🤖 Supervisor → Multi-Agent Response';
-    header.appendChild(label);
-    wrap.appendChild(header);
-
-    if (data.steps) {
-      const steps = document.createElement('div');
-      steps.className = 'agent-steps';
-      data.steps.forEach((s, i) => {
-        const b = document.createElement('span');
-        b.className = `step-badge step-${i+1}`;
-        b.textContent = s;
-        steps.appendChild(b);
-      });
-      wrap.appendChild(steps);
-    }
-
-    if (data.type === 'memory') {
-      const b = document.createElement('div');
-      b.className = 'agent-steps';
-      const badge = document.createElement('span');
-      badge.className = 'step-badge memory-badge';
-      badge.textContent = '⚡ Answered from session memory';
-      b.appendChild(badge);
-      wrap.appendChild(b);
-    }
-
-    const body = document.createElement('div');
-    body.className = 'agent-body';
-    body.textContent = data.response;
-    wrap.appendChild(body);
-    return wrap;
-  }
-
-  async function sendMessage() {
-    const input = document.getElementById('userInput');
-    const btn = document.getElementById('sendBtn');
-    const chatWindow = document.getElementById('chatWindow');
-    const text = input.value.trim();
-    if (!text) return;
-
-    // Remove empty state
-    const empty = document.getElementById('emptyState');
-    if (empty) empty.remove();
-
-    // Add user message
-    chatWindow.appendChild(addUserMessage(text));
-    input.value = '';
-    btn.disabled = true;
-
-    // Add loading
-    const loader = addLoading();
-    chatWindow.appendChild(loader);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
-
-    try {
-      const res = await fetch('/query', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({input: text})
-      });
-      const data = await res.json();
-      loader.remove();
-
-      if (data.error) {
-        const err = document.createElement('div');
-        err.className = 'error-msg';
-        err.textContent = data.error;
-        chatWindow.appendChild(err);
-      } else {
-        chatWindow.appendChild(renderResponse(data));
-        if (data.type !== 'memory') {
-          turnCount++;
-          document.getElementById('turnCount').textContent = `${turnCount} turn${turnCount !== 1 ? 's' : ''}`;
+    def query_vector_kb(self, employee_role):
+        if not self.kb_data: return {"status": "Offline", "payload": None}
+        policies = self.kb_data.get("policies", [])
+        capacity_rules = self.kb_data.get("study_capacity_rules", {})
+        
+        for policy in policies:
+            target = policy.get("target_role", "")
+            if employee_role.lower() in target.lower() or target.lower() in employee_role.lower():
+                return {
+                    "status": "Grounded",
+                    "source": "Microsoft Foundry IQ Engine",
+                    "citations": f"corporate_learning_policy.json -> policies -> target_role: {target}",
+                    "payload": policy,
+                    "capacity_rules": capacity_rules
+                }
+        return {
+            "status": "Adaptive Baseline",
+            "source": "Foundry IQ - Cross-Role Inference",
+            "citations": "corporate_learning_policy.json -> study_capacity_rules [Extrapolated]",
+            "payload": {
+                "target_role": employee_role,
+                "recommended_certifications": ["AZ-900: Microsoft Azure Fundamentals Core Path"],
+                "core_competencies": ["General Enterprise System Literacy", "Cloud Operations Tracking"],
+                "mandatory_skills": ["Basic Cloud Resource Operations Control Management"]
+            },
+            "capacity_rules": capacity_rules
         }
-      }
-    } catch(e) {
-      loader.remove();
-      const err = document.createElement('div');
-      err.className = 'error-msg';
-      err.textContent = 'Network error. Is the server running?';
-      chatWindow.appendChild(err);
-    }
 
-    btn.disabled = false;
-    chatWindow.scrollTop = chatWindow.scrollHeight;
-    input.focus();
-  }
-</script>
-</body>
-</html>
-"""
+class SageAuditorAgent:
+    def __init__(self, iq_engine, client):
+        self.iq_engine = iq_engine
+        self.client = client
+    def execute(self, role):
+        iq_result = self.iq_engine.query_vector_kb(role)
+        response = chat_with_retry(
+            self.client,
+            step_label="Policy audit",
+            messages=[
+                {"role": "system", "content": "You are Sage Auditor. Extract a highly concise markdown summary listing core competencies and required skills."},
+                {"role": "user", "content": json.dumps(iq_result['payload'])}
+            ],
+            model="gpt-4o",
+            temperature=0.1,
+            max_tokens=500,
+        )
+        return {"success": True, "summary": response.choices[0].message.content.strip(), "result": iq_result}
 
-@app.route("/")
-def index():
-    return render_template_string(HTML)
+class ChronosSchedulerAgent:
+    def __init__(self, client):
+        self.client = client
+    def execute(self, summary, rules):
+        prompt = (
+            "You are Chronos Scheduler. Build a concise day-by-day learning timeline from the summary and capacity rules. "
+            "Output ONLY raw HTML (no markdown fences, no outer scroll wrapper). "
+            "Create 5 to 7 days maximum. Each day is one <div class=\"collectible-card\" style=\"--delay: Ns;\"> "
+            "with <div class=\"card-title\">Day X: Title</div> and <div class=\"card-body-text\"><ul><li>...</li></ul></div>. "
+            "Keep bullet text short."
+        )
+        response = chat_with_retry(
+            self.client,
+            step_label="Learning schedule",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"Summary: {summary}\nConstraints: {json.dumps(rules)}"}
+            ],
+            model="gpt-4o",
+            temperature=0.1,
+            max_tokens=2800,
+        )
+        return {"success": True, "plan": response.choices[0].message.content.strip()}
 
-@app.route("/roles")
-def roles():
-    return jsonify({"roles": get_available_roles()})
+# ==========================================================
+# 🔮 USER INTAKE CONTROLLER SECTION
+# ==========================================================
+st.markdown("<br>", unsafe_allow_html=True)
+cols_input = st.columns([8, 2])
 
-@app.route("/clear", methods=["POST"])
-def clear():
-    session_history.clear()
-    return jsonify({"status": "cleared"})
+with cols_input[0]:
+    employee_role = st.text_input("Designation", placeholder="What would you like to achieve today? (e.g., Cloud infra engineer)", label_visibility="collapsed")
+    if employee_role != st.session_state.previous_role:
+        st.session_state.cached_report = None
+        st.session_state.cached_audit = None
+        st.session_state.pipeline_logs = []
+        st.session_state.previous_role = employee_role
 
-@app.route("/query", methods=["POST"])
-def query():
-    data = request.get_json()
-    user_input = data.get("input", "").strip()
+with cols_input[1]:
+    run_loop = st.button("Submit ↗", use_container_width=True)
 
-    if not user_input:
-        return jsonify({"error": "Please enter a role or question."})
+# ==========================================================
+# 📊 DATA EVALUATION CASCADE ROUTINES
+# ==========================================================
+if run_loop and employee_role:
+    st.session_state.pipeline_logs = []
+    try:
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if not token:
+            raise ValueError("Authentication token configuration missing.")
 
-    # Detect follow-up
-    if is_followup_question(user_input) and session_history:
-        answer = handle_followup(user_input)
-        return jsonify({
-            "type": "memory",
-            "response": answer
-        })
+        client = create_models_client(token)
+        iq_engine = FoundryIQEngine()
+        auditor = SageAuditorAgent(iq_engine, client)
+        scheduler = ChronosSchedulerAgent(client)
 
-    # Run full supervisor loop
-    result = run_supervisor(user_input)
+        with st.spinner("Generating grounded learning plan (this may take up to a minute)..."):
+            st.session_state.pipeline_logs.append("✨ [Nixtio Assistant]: Accessing corporate policy index maps...")
+            audit_res = auditor.execute(employee_role)
 
-    if result is None:
-        available = get_available_roles()
-        return jsonify({
-            "error": f"Role not found in corporate policy. Available roles: {', '.join(available)}"
-        })
+            st.session_state.pipeline_logs.append("✨ [Nixtio Assistant]: Dynamically calculating timeline capacity metrics...")
+            sched_res = scheduler.execute(audit_res["summary"], audit_res["result"]["capacity_rules"])
 
-    return jsonify({
-        "type": "agent",
-        "steps": ["✅ Policy Agent", "✅ Study Planner Agent", "✅ Memory Agent"],
-        "response": result
-    })
+        st.session_state.cached_audit = audit_res
+        st.session_state.cached_report = sched_res["plan"]
 
-if __name__ == "__main__":
-    print("\n🤖 Enterprise Learning Agents — Web Interface")
-    print("   Open http://localhost:5000 in your browser\n")
-    app.run(debug=False, port=5000)
+    except Exception as runtime_error:
+        st.session_state.cached_report = None
+        st.session_state.cached_audit = None
+        st.markdown(
+            f"<div class='insight-capsule' style='color:#ef4444; border-color:rgba(239,68,68,0.2);'>"
+            f"❌ Evaluation Halted: {runtime_error}</div>",
+            unsafe_allow_html=True,
+        )
+
+# Print clean floating metrics trace
+if st.session_state.pipeline_logs:
+    for trace in st.session_state.pipeline_logs:
+        st.markdown(f"<div class='insight-capsule'>{trace}</div>", unsafe_allow_html=True)
+
+# ==========================================================
+# 🃏 THE CINEMATIC SURREAL CARD REVEAL PLATFORM
+# ==========================================================
+if st.session_state.cached_report and st.session_state.cached_audit:
+    audit_meta = st.session_state.cached_audit
+    
+    # Classy Dynamic Heading Section displaying current target role
+    display_role_title = employee_role.strip().title() if employee_role else "Target System Architecture"
+    st.markdown(f"""
+        <div class="role-heading-banner">
+            <span style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; color: #4f46e5; font-weight: 700; display: block; margin-bottom: 4px;">Grounded Optimization Track</span>
+            <h2 style="margin: 0; color: #161a2b; font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px;">Custom Learning Environment: {display_role_title}</h2>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    if audit_meta["result"]["status"] == "Adaptive Baseline":
+        st.markdown(f"<p style='text-align:center; color:#6366f1; font-weight:600; font-size:0.9rem;'>⚠️ Context Extrapolated via: <code>{audit_meta['result']['citations']}</code></p>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<p style='text-align:center; color:#10b981; font-weight:600; font-size:0.9rem;'>✅ Grounded Organization Record Attached: <code>{audit_meta['result']['citations']}</code></p>", unsafe_allow_html=True)
+        
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div class="cards-scroll-container">{st.session_state.cached_report}</div>',
+        unsafe_allow_html=True,
+    )
+
+st.markdown("<br><br><div style='text-align:center; color:#94a3b8; font-size:0.8rem; letter-spacing:0.5px;'>Daily Nixtio v2.6 Core Framework Integration • Powered by GitHub Models</div>", unsafe_allow_html=True)
