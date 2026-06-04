@@ -35,19 +35,19 @@
 
 ### Primary Demo
 
-**[<img width="1893" height="901" alt="image" src="https://github.com/user-attachments/assets/d11067c6-c319-4f7d-baa7-e0d4a3ede802" />]
+**<img width="1893" height="901" alt="image" src="https://github.com/user-attachments/assets/d11067c6-c319-4f7d-baa7-e0d4a3ede802" />
 **
 
 ### Supplementary Captures *(optional)*
 
 | View | Asset |
 | :--- | :--- |
-| Hero intake & Submit flow | **[<img width="1885" height="898" alt="image" src="https://github.com/user-attachments/assets/3b0c692b-d9b2-4cc9-b8e9-0be79b2d481b" />
-]** |
-| Grounded vs. extrapolated citation banner | **[<img width="1879" height="892" alt="image" src="https://github.com/user-attachments/assets/65cd8983-448f-4f78-8611-3e013820c77c" />
-]** |
-| Horizontal collectible-card carousel | **[<img width="1888" height="891" alt="image" src="https://github.com/user-attachments/assets/d05f6b71-b73e-413e-8292-24d5f2654ebf" />
-]** |
+| Hero intake & Submit flow | **<img width="1885" height="898" alt="image" src="https://github.com/user-attachments/assets/3b0c692b-d9b2-4cc9-b8e9-0be79b2d481b" />
+** |
+| Grounded vs. extrapolated citation banner | **<img width="1879" height="892" alt="image" src="https://github.com/user-attachments/assets/65cd8983-448f-4f78-8611-3e013820c77c" />
+** |
+| Horizontal collectible-card carousel | **<img width="1888" height="891" alt="image" src="https://github.com/user-attachments/assets/d05f6b71-b73e-413e-8292-24d5f2654ebf" />
+** |
 
 ---
 
