@@ -31,8 +31,6 @@
 
 ## 🎬 Product Experience
 
-> *Embed your cinematic walkthrough below—this is the first impression layer for reviewers, stakeholders, and new engineers.*
-
 ### Primary Demo
 
 <img width="1893" height="901" alt="image" src="https://github.com/user-attachments/assets/d11067c6-c319-4f7d-baa7-e0d4a3ede802" />
